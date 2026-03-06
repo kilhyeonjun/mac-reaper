@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>net.kilhyeonjun.mac-reaper</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__REAPER_DIR__/reap.sh</string>
+  </array>
+
+  <!-- Run every 6 hours (21600 seconds) -->
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <!-- Also run at load (boot / login) -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Environment -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>__HOME__</string>
+  </dict>
+
+  <!-- Logging -->
+  <key>StandardOutPath</key>
+  <string>__HOME__/.mac-reaper/launchd-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.mac-reaper/launchd-stderr.log</string>
+
+  <!-- Low priority — don't interfere with user work -->
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
