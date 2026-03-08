@@ -8,19 +8,74 @@ fail() {
   exit 1
 }
 
+assert_contains() {
+  local needle="$1"
+  local haystack="$2"
+  local msg="$3"
+  printf '%s' "$haystack" | grep -Fq "$needle" || fail "$msg"
+}
+
+assert_not_contains() {
+  local needle="$1"
+  local haystack="$2"
+  local msg="$3"
+  if printf '%s' "$haystack" | grep -Fq "$needle"; then
+    fail "$msg"
+  fi
+}
+
+run_once() {
+  local lock_dir="$1"
+  local log_dir="$2"
+  REAPER_LOG_DIR="$log_dir" REAPER_LOCK_DIR="$lock_dir" REAPER_DRY_RUN=1 "$ROOT_DIR/reap.sh"
+  cat "$log_dir/$(date +%Y-%m-%d).log"
+}
+
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-LOCK_DIR="$TMP_DIR/run.lock"
-LOG_DIR="$TMP_DIR/logs"
-mkdir -p "$LOCK_DIR" "$LOG_DIR"
-printf '%s\n' "$$" > "$LOCK_DIR/pid"
+test_missing_pid_file_should_recover_lock() {
+  local case_dir="$TMP_DIR/case-missing-pid"
+  local lock_dir="$case_dir/run.lock"
+  local log_dir="$case_dir/logs"
+  mkdir -p "$lock_dir" "$log_dir"
 
-REAPER_LOG_DIR="$LOG_DIR" REAPER_LOCK_DIR="$LOCK_DIR" REAPER_DRY_RUN=1 "$ROOT_DIR/reap.sh"
+  local log
+  log="$(run_once "$lock_dir" "$log_dir")"
 
-LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d).log"
-[ -f "$LOG_FILE" ] || fail "lock skip run should still log a message"
+  assert_not_contains "Skipped: another_run_in_progress" "$log" "missing pid file lock should be treated as stale and recovered"
+  assert_contains "No orphan processes detected." "$log" "recovered run should proceed normally"
+}
 
-grep -Fq "Skipped: another_run_in_progress" "$LOG_FILE" || fail "lock skip message should be logged"
+test_dead_pid_should_recover_lock() {
+  local case_dir="$TMP_DIR/case-dead-pid"
+  local lock_dir="$case_dir/run.lock"
+  local log_dir="$case_dir/logs"
+  mkdir -p "$lock_dir" "$log_dir"
+  printf '%s\n' "999999" > "$lock_dir/pid"
+
+  local log
+  log="$(run_once "$lock_dir" "$log_dir")"
+
+  assert_not_contains "Skipped: another_run_in_progress" "$log" "dead pid lock should be recovered"
+  assert_contains "No orphan processes detected." "$log" "recovered run should proceed normally"
+}
+
+test_live_pid_should_skip() {
+  local case_dir="$TMP_DIR/case-live-pid"
+  local lock_dir="$case_dir/run.lock"
+  local log_dir="$case_dir/logs"
+  mkdir -p "$lock_dir" "$log_dir"
+  printf '%s\n' "$$" > "$lock_dir/pid"
+
+  local log
+  log="$(run_once "$lock_dir" "$log_dir")"
+
+  assert_contains "Skipped: another_run_in_progress" "$log" "live pid lock should skip run"
+}
+
+test_missing_pid_file_should_recover_lock
+test_dead_pid_should_recover_lock
+test_live_pid_should_skip
 
 printf 'PASS: test_lock.sh\n'

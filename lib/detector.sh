@@ -24,9 +24,20 @@ _get_elapsed_sec() {
     3) hours="${parts[0]}"; mins="${parts[1]}"; secs="${parts[2]}" ;;
     2) mins="${parts[0]}"; secs="${parts[1]}" ;;
     1) secs="${parts[0]}" ;;
+    *) echo -1; return ;;
   esac
 
+  [[ "$days" =~ ^[0-9]+$ ]] || { echo -1; return; }
+  [[ "$hours" =~ ^[0-9]+$ ]] || { echo -1; return; }
+  [[ "$mins" =~ ^[0-9]+$ ]] || { echo -1; return; }
+  [[ "$secs" =~ ^[0-9]+$ ]] || { echo -1; return; }
+
   echo $(( 10#$days * 86400 + 10#$hours * 3600 + 10#$mins * 60 + 10#$secs ))
+}
+
+_get_ps_start_token() {
+  local pid="$1"
+  ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//'
 }
 
 # Check if process has child processes
@@ -61,6 +72,7 @@ detect_orphans() {
       # Check age
       local elapsed
       elapsed=$(_get_elapsed_sec "$pid")
+      [ "$elapsed" -lt 0 ] && continue
       [ "$elapsed" -lt "$min_age" ] && continue
 
       # Check condition
@@ -68,7 +80,11 @@ detect_orphans() {
         _has_children "$pid" && continue
       fi
 
-      results+="${pid}|${comm}|${rss}|${elapsed}|${condition}"$'\n'
+      local start_token
+      start_token=$(_get_ps_start_token "$pid")
+      [ -n "$start_token" ] || continue
+
+      results+="${pid}|${comm}|${rss}|${elapsed}|${condition}|${start_token}"$'\n'
       seen_pids+="${pid},"
     done < <(ps -eo ppid,pid,rss,comm 2>/dev/null)
   done

@@ -15,6 +15,25 @@ source "$REAPER_DIR/lib/detector.sh"
 source "$REAPER_DIR/lib/reaper.sh"
 source "$REAPER_DIR/lib/reporter.sh"
 
+is_non_negative_int() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]+$ ]]
+}
+
+validate_runtime_config() {
+  is_non_negative_int "${REAPER_ORPHAN_MIN_AGE_SEC:-}" || return 1
+  is_non_negative_int "${REAPER_GRACE_WAIT_SEC:-}" || return 1
+  case "${REAPER_SIGNAL_GRACE:-}" in
+    TERM|HUP|INT|QUIT|KILL) ;;
+    *) return 1 ;;
+  esac
+  case "${REAPER_SIGNAL_FORCE:-}" in
+    KILL|TERM|HUP|INT|QUIT) ;;
+    *) return 1 ;;
+  esac
+  return 0
+}
+
 acquire_lock() {
   local lock_dir="${REAPER_LOCK_DIR:-$HOME/.mac-reaper/run.lock}"
   local pid_file="$lock_dir/pid"
@@ -34,6 +53,12 @@ acquire_lock() {
         return 0
       fi
     fi
+  else
+    rm -rf "$lock_dir"
+    if mkdir "$lock_dir" 2>/dev/null; then
+      printf '%s\n' "$$" > "$pid_file"
+      return 0
+    fi
   fi
 
   return 1
@@ -47,6 +72,11 @@ release_lock() {
 
 # Ensure log directory
 _init_log_dir
+
+if ! validate_runtime_config; then
+  _log "Invalid config: REAPER_ORPHAN_MIN_AGE_SEC=${REAPER_ORPHAN_MIN_AGE_SEC:-} REAPER_GRACE_WAIT_SEC=${REAPER_GRACE_WAIT_SEC:-} REAPER_SIGNAL_GRACE=${REAPER_SIGNAL_GRACE:-} REAPER_SIGNAL_FORCE=${REAPER_SIGNAL_FORCE:-}"
+  exit 2
+fi
 
 if ! acquire_lock; then
   _log "Skipped: another_run_in_progress lock=${REAPER_LOCK_DIR:-$HOME/.mac-reaper/run.lock}"

@@ -14,11 +14,17 @@ _get_ps_ppid() {
   ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' '
 }
 
+_get_ps_start_token() {
+  local pid="$1"
+  ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//'
+}
+
 _validate_candidate() {
   local pid="$1"
   local expected_comm="$2"
   local min_age="$3"
   local condition="$4"
+  local expected_start_token="${5:-}"
 
   local current_comm
   current_comm="$(_get_ps_comm "$pid")"
@@ -39,6 +45,12 @@ _validate_candidate() {
     return 1
   fi
 
+  if [ -n "$expected_start_token" ]; then
+    local current_start_token
+    current_start_token="$(_get_ps_start_token "$pid")"
+    [ "$current_start_token" = "$expected_start_token" ] || { REAPER_LAST_REASON="identity_mismatch_start"; return 1; }
+  fi
+
   return 0
 }
 
@@ -48,13 +60,14 @@ _kill_process() {
   local expected_comm="$2"
   local condition="$3"
   local min_age="$4"
+  local expected_start_token="${5:-}"
   local grace_signal="${REAPER_SIGNAL_GRACE:-TERM}"
   local force_signal="${REAPER_SIGNAL_FORCE:-KILL}"
   local wait_sec="${REAPER_GRACE_WAIT_SEC:-3}"
 
   REAPER_LAST_REASON=""
 
-  _validate_candidate "$pid" "$expected_comm" "$min_age" "$condition" || return 1
+  _validate_candidate "$pid" "$expected_comm" "$min_age" "$condition" "$expected_start_token" || return 1
 
   # Verify process still exists
   kill -0 "$pid" 2>/dev/null || { REAPER_LAST_REASON="missing"; return 1; }
@@ -83,7 +96,7 @@ reap_orphans() {
   local min_age="${REAPER_ORPHAN_MIN_AGE_SEC:-3600}"
   local results=""
 
-  while IFS='|' read -r pid comm rss elapsed condition; do
+  while IFS='|' read -r pid comm rss elapsed condition start_token; do
     [ -z "$pid" ] && continue
 
     if [ "$dry_run" -eq 1 ]; then
@@ -91,7 +104,7 @@ reap_orphans() {
       continue
     fi
 
-    if _kill_process "$pid" "$comm" "$condition" "$min_age"; then
+    if _kill_process "$pid" "$comm" "$condition" "$min_age" "$start_token"; then
       results+="${pid}|${comm}|${rss}|killed|${REAPER_LAST_REASON}"$'\n'
     else
       results+="${pid}|${comm}|${rss}|failed|${REAPER_LAST_REASON:-unknown}"$'\n'

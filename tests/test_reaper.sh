@@ -15,12 +15,14 @@ assert_contains() {
   printf '%s' "$haystack" | grep -Fq "$needle" || fail "$msg"
 }
 
+source "$ROOT_DIR/lib/detector.sh"
 source "$ROOT_DIR/lib/reaper.sh"
 
 test_reap_orphans_dry_run() {
   REAPER_DRY_RUN=1
+  REAPER_ORPHAN_MIN_AGE_SEC=0
   local detections
-  detections=$'10|opencode|100|999\n20|fzf|200|999'
+  detections=$'10|opencode|100|999|children=0|Mon Mar 09 01:02:03 2026\n20|fzf|200|999||Mon Mar 09 01:02:03 2026'
 
   local out
   out="$(reap_orphans "$detections")"
@@ -31,6 +33,7 @@ test_reap_orphans_dry_run() {
 
 test_reap_orphans_status_mapping() {
   REAPER_DRY_RUN=0
+  REAPER_ORPHAN_MIN_AGE_SEC=0
   _kill_process() {
     if [ "$1" = "10" ]; then
       REAPER_LAST_REASON="killed"
@@ -41,7 +44,7 @@ test_reap_orphans_status_mapping() {
   }
 
   local detections
-  detections=$'10|opencode|100|999\n20|fzf|200|999'
+  detections=$'10|opencode|100|999|children=0|Mon Mar 09 01:02:03 2026\n20|fzf|200|999||Mon Mar 09 01:02:03 2026'
 
   local out
   out="$(reap_orphans "$detections")"
@@ -50,7 +53,22 @@ test_reap_orphans_status_mapping() {
   assert_contains "20|fzf|200|failed|identity_mismatch" "$out" "failed kill should include reason"
 }
 
+test_validate_candidate_requires_start_token_match() {
+  _get_ps_comm() { echo "opencode"; }
+  _get_ps_ppid() { echo "1"; }
+  _get_elapsed_sec() { echo "999"; }
+  _has_children() { return 1; }
+  _get_ps_start_token() { echo "Mon Mar 09 01:02:03 2026"; }
+
+  if _validate_candidate "10" "opencode" "0" "children=0" "Mon Mar 09 11:22:33 2026"; then
+    fail "_validate_candidate should fail when start token mismatches"
+  fi
+
+  assert_contains "identity_mismatch_start" "$REAPER_LAST_REASON" "reason should indicate start-token mismatch"
+}
+
 test_reap_orphans_dry_run
 test_reap_orphans_status_mapping
+test_validate_candidate_requires_start_token_match
 
 printf 'PASS: test_reaper.sh\n'

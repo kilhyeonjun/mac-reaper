@@ -43,8 +43,16 @@ set -euo pipefail
 
 if [[ "${1:-}" == "-p" ]]; then
   pid="${2:-}"
-  var="MOCK_ETIME_${pid}"
-  echo "${!var:-${MOCK_ETIME_DEFAULT:-00:00:00}}"
+  if [[ "${3:-}" == "-o" ]] && [[ "${4:-}" == "etime=" ]]; then
+    var="MOCK_ETIME_${pid}"
+    echo "${!var:-${MOCK_ETIME_DEFAULT:-00:00:00}}"
+    exit 0
+  fi
+  if [[ "${3:-}" == "-o" ]] && [[ "${4:-}" == "lstart=" ]]; then
+    var="MOCK_LSTART_${pid}"
+    echo "${!var:-${MOCK_LSTART_DEFAULT:-Mon Jan 01 00:00:00 2026}}"
+    exit 0
+  fi
   exit 0
 fi
 
@@ -117,6 +125,9 @@ EOF
   export MOCK_ETIME_202="11-00:00:00"
   export MOCK_ETIME_301="11-00:00:00"
   export MOCK_ETIME_401="11-00:00:00"
+  export MOCK_LSTART_101="Mon Mar 09 01:02:03 2026"
+  export MOCK_LSTART_202="Mon Mar 09 01:02:03 2026"
+  export MOCK_LSTART_301="Mon Mar 09 01:02:03 2026"
 
   export MOCK_CHILDREN_201="900"
 
@@ -130,15 +141,34 @@ EOF
   assert_contains "101|opencode|70000|" "$out" "eligible orphan opencode should be detected"
   assert_contains "202|/bin/zsh|384|" "$out" "eligible orphan zsh should be detected"
   assert_contains "301|fzf|960|" "$out" "eligible orphan fzf should be detected"
-  assert_contains "101|opencode|70000|950400|children=0" "$out" "condition should be included in detector output"
+  assert_contains "101|opencode|70000|950400|children=0|Mon Mar 09 01:02:03 2026" "$out" "condition and start token should be included in detector output"
   assert_not_contains "102|opencode|" "$out" "young process should be excluded by min age"
   assert_not_contains "150|opencode-helper|" "$out" "partial command match should not be detected"
   assert_not_contains "201|/bin/zsh|" "$out" "child-bearing process should be excluded when children=0"
   assert_not_contains "401|opencode|" "$out" "non-orphan process should be excluded"
 }
 
+test_detect_orphans_malformed_etime() {
+  export REAPER_ORPHAN_MIN_AGE_SEC=0
+  REAPER_TARGETS=("opencode:children=0")
+
+  export MOCK_PS_EO_FILE="$TMP_DIR/ps-bad-etime.txt"
+  cat > "$MOCK_PS_EO_FILE" <<'EOF'
+1 501 50000 opencode
+EOF
+
+  export MOCK_ETIME_501="bad:time"
+  export MOCK_LSTART_501="Mon Mar 09 01:02:03 2026"
+
+  local out
+  out="$(detect_orphans)"
+
+  assert_not_contains "501|opencode|" "$out" "malformed etime should be skipped"
+}
+
 test_get_elapsed_sec_leading_zero
 test_get_elapsed_sec_day_hour
 test_detect_orphans_filters
+test_detect_orphans_malformed_etime
 
 printf 'PASS: test_detector.sh\n'
