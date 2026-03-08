@@ -42,31 +42,75 @@ is_same_reaper_owner() {
   args="$(ps -p "$pid" -o command= 2>/dev/null | sed 's/^ *//; s/ *$//')"
   [ -n "$args" ] || return 1
   case "$args" in
-    *"$REAPER_DIR/reap.sh"*) return 0 ;;
+    *"$REAPER_DIR/reap.sh"*|*"/bin/bash $REAPER_DIR/reap.sh"*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+write_lock_meta() {
+  local lock_dir="$1"
+  local token="$2"
+  umask 077
+  {
+    printf 'pid=%s\n' "$$"
+    printf 'uid=%s\n' "$(id -u)"
+    printf 'reaper_dir=%s\n' "$REAPER_DIR"
+    printf 'token=%s\n' "$token"
+  } > "$lock_dir/meta"
+}
+
+read_lock_meta() {
+  local lock_dir="$1"
+  local meta_file="$lock_dir/meta"
+  LOCK_META_UID=""
+  LOCK_META_REAPER_DIR=""
+  LOCK_META_TOKEN=""
+
+  [ -f "$meta_file" ] || return 1
+
+  while IFS='=' read -r key value; do
+    case "$key" in
+      uid) LOCK_META_UID="$value" ;;
+      reaper_dir) LOCK_META_REAPER_DIR="$value" ;;
+      token) LOCK_META_TOKEN="$value" ;;
+    esac
+  done < "$meta_file"
+
+  [ -n "$LOCK_META_UID" ] && [ -n "$LOCK_META_REAPER_DIR" ] && [ -n "$LOCK_META_TOKEN" ]
 }
 
 acquire_lock() {
   local lock_dir="${REAPER_LOCK_DIR:-$HOME/.mac-reaper/run.lock}"
   local pid_file="$lock_dir/pid"
+  local lock_token
+  lock_token="$$-$(date +%s)"
 
   if mkdir "$lock_dir" 2>/dev/null; then
     printf '%s\n' "$$" > "$pid_file"
+    write_lock_meta "$lock_dir" "$lock_token"
     return 0
   fi
 
   if [ -f "$pid_file" ]; then
     local lock_pid
     lock_pid="$(tr -d ' ' < "$pid_file" 2>/dev/null || true)"
-    if [ -n "$lock_pid" ] && is_same_reaper_owner "$lock_pid"; then
+
+    if [ -n "$lock_pid" ] && kill -0 "$lock_pid" 2>/dev/null; then
+      if read_lock_meta "$lock_dir" && \
+         [ "$LOCK_META_UID" = "$(id -u)" ] && \
+         [ "$LOCK_META_REAPER_DIR" = "$REAPER_DIR" ] && \
+         is_same_reaper_owner "$lock_pid"; then
+        return 1
+      fi
+
       return 1
     fi
 
-    if [ -n "$lock_pid" ] && ! is_same_reaper_owner "$lock_pid"; then
+    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
       rm -rf "$lock_dir"
       if mkdir "$lock_dir" 2>/dev/null; then
         printf '%s\n' "$$" > "$pid_file"
+        write_lock_meta "$lock_dir" "$lock_token"
         return 0
       fi
     fi
@@ -74,6 +118,7 @@ acquire_lock() {
     rm -rf "$lock_dir"
     if mkdir "$lock_dir" 2>/dev/null; then
       printf '%s\n' "$$" > "$pid_file"
+      write_lock_meta "$lock_dir" "$lock_token"
       return 0
     fi
   fi
@@ -84,6 +129,7 @@ acquire_lock() {
 release_lock() {
   local lock_dir="${REAPER_LOCK_DIR:-$HOME/.mac-reaper/run.lock}"
   rm -f "$lock_dir/pid" 2>/dev/null || true
+  rm -f "$lock_dir/meta" 2>/dev/null || true
   rmdir "$lock_dir" 2>/dev/null || true
 }
 

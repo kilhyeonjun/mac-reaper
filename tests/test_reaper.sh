@@ -15,6 +15,13 @@ assert_contains() {
   printf '%s' "$haystack" | grep -Fq "$needle" || fail "$msg"
 }
 
+assert_eq() {
+  local expected="$1"
+  local actual="$2"
+  local msg="$3"
+  [ "$expected" = "$actual" ] || fail "$msg (expected=$expected actual=$actual)"
+}
+
 source "$ROOT_DIR/lib/detector.sh"
 source "$ROOT_DIR/lib/reaper.sh"
 
@@ -191,6 +198,13 @@ test_validate_candidate_missing_commandline_reason() {
   assert_contains "missing_commandline" "$REAPER_LAST_REASON" "missing commandline should set reason=missing_commandline"
 }
 
+test_classify_kill_error_variants() {
+  assert_eq "term_failed_esrch" "$(_classify_kill_error term 'kill: (1) - No such process')" "should classify ESRCH"
+  assert_eq "term_failed_eperm" "$(_classify_kill_error term 'kill: (1) - Operation not permitted')" "should classify EPERM"
+  assert_eq "force_failed_einval" "$(_classify_kill_error force 'kill: illegal signal specification')" "should classify EINVAL"
+  assert_eq "force_failed" "$(_classify_kill_error force 'unknown error')" "should fallback to generic failure"
+}
+
 test_reap_orphans_dry_run
 test_reap_orphans_status_mapping
 test_validate_candidate_requires_start_token_match
@@ -201,5 +215,6 @@ test_validate_candidate_missing_comm_reason
 test_validate_candidate_not_orphan_reason
 test_validate_candidate_too_young_reason
 test_validate_candidate_missing_commandline_reason
+test_classify_kill_error_variants
 
 printf 'PASS: test_reaper.sh\n'

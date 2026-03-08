@@ -98,8 +98,7 @@ test_live_unrelated_pid_should_recover_lock() {
   local log
   log="$(run_once "$lock_dir" "$log_dir")"
 
-  assert_not_contains "Skipped: another_run_in_progress" "$log" "live unrelated pid should not block lock recovery"
-  assert_contains "No orphan processes detected." "$log" "recovered lock should allow normal run"
+  assert_contains "Skipped: another_run_in_progress" "$log" "ambiguous live pid should fail closed and skip"
 
   kill "$sleeper_pid" 2>/dev/null || true
   wait "$sleeper_pid" 2>/dev/null || true

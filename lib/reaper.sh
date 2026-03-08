@@ -3,6 +3,7 @@
 # Sourced by reap.sh
 
 REAPER_LAST_REASON=""
+REAPER_KILL_CMD="${REAPER_KILL_CMD:-kill}"
 
 _get_ps_comm() {
   local pid="$1"
@@ -17,6 +18,21 @@ _get_ps_ppid() {
 _get_ps_start_token() {
   local pid="$1"
   ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//'
+}
+
+_classify_kill_error() {
+  local phase="$1"
+  local err="$2"
+  case "$err" in
+    *"No such process"*) echo "${phase}_failed_esrch" ;;
+    *"Operation not permitted"*) echo "${phase}_failed_eperm" ;;
+    *"illegal signal"*|*"invalid signal"*) echo "${phase}_failed_einval" ;;
+    *) echo "${phase}_failed" ;;
+  esac
+}
+
+_run_kill() {
+  "$REAPER_KILL_CMD" "$@"
 }
 
 _validate_candidate() {
@@ -82,19 +98,25 @@ _kill_process() {
   _validate_candidate "$pid" "$expected_comm" "$min_age" "$condition" "$expected_start_token" "$expected_command_hash" || return 1
 
   # Verify process still exists
-  kill -0 "$pid" 2>/dev/null || { REAPER_LAST_REASON="missing"; return 1; }
+  _run_kill -0 "$pid" 2>/dev/null || { REAPER_LAST_REASON="missing"; return 1; }
 
   # Graceful shutdown
-  kill -"$grace_signal" "$pid" 2>/dev/null || { REAPER_LAST_REASON="term_failed"; return 1; }
+  if ! term_err=$(_run_kill -"$grace_signal" "$pid" 2>&1); then
+    REAPER_LAST_REASON="$(_classify_kill_error "term" "$term_err")"
+    return 1
+  fi
   sleep "$wait_sec"
 
   # Check if it's gone
-  if kill -0 "$pid" 2>/dev/null; then
+  if _run_kill -0 "$pid" 2>/dev/null; then
     # Force kill
-    kill -"$force_signal" "$pid" 2>/dev/null || { REAPER_LAST_REASON="force_failed"; return 1; }
+    if ! force_err=$(_run_kill -"$force_signal" "$pid" 2>&1); then
+      REAPER_LAST_REASON="$(_classify_kill_error "force" "$force_err")"
+      return 1
+    fi
     sleep 1
     # Final check
-    kill -0 "$pid" 2>/dev/null && { REAPER_LAST_REASON="still_running"; return 1; }
+    _run_kill -0 "$pid" 2>/dev/null && { REAPER_LAST_REASON="still_running"; return 1; }
   fi
 
   REAPER_LAST_REASON="killed"
