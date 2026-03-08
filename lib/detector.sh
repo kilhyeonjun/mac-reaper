@@ -24,7 +24,7 @@ _get_elapsed_sec() {
     1) secs="${parts[0]}" ;;
   esac
 
-  echo $(( days * 86400 + hours * 3600 + mins * 60 + secs ))
+  echo $(( 10#$days * 86400 + 10#$hours * 3600 + 10#$mins * 60 + 10#$secs ))
 }
 
 # Check if process has child processes
