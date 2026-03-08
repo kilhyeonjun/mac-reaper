@@ -23,6 +23,7 @@ is_non_negative_int() {
 validate_runtime_config() {
   is_non_negative_int "${REAPER_ORPHAN_MIN_AGE_SEC:-}" || return 1
   is_non_negative_int "${REAPER_GRACE_WAIT_SEC:-}" || return 1
+  is_non_negative_int "${REAPER_MAX_KILLS:-}" || return 1
   case "${REAPER_SIGNAL_GRACE:-}" in
     TERM|HUP|INT|QUIT|KILL) ;;
     *) return 1 ;;
@@ -32,6 +33,18 @@ validate_runtime_config() {
     *) return 1 ;;
   esac
   return 0
+}
+
+is_same_reaper_owner() {
+  local pid="$1"
+  kill -0 "$pid" 2>/dev/null || return 1
+  local args
+  args="$(ps -p "$pid" -o command= 2>/dev/null | sed 's/^ *//; s/ *$//')"
+  [ -n "$args" ] || return 1
+  case "$args" in
+    *"$REAPER_DIR/reap.sh"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 acquire_lock() {
@@ -46,7 +59,11 @@ acquire_lock() {
   if [ -f "$pid_file" ]; then
     local lock_pid
     lock_pid="$(tr -d ' ' < "$pid_file" 2>/dev/null || true)"
-    if [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; then
+    if [ -n "$lock_pid" ] && is_same_reaper_owner "$lock_pid"; then
+      return 1
+    fi
+
+    if [ -n "$lock_pid" ] && ! is_same_reaper_owner "$lock_pid"; then
       rm -rf "$lock_dir"
       if mkdir "$lock_dir" 2>/dev/null; then
         printf '%s\n' "$$" > "$pid_file"
@@ -84,6 +101,9 @@ if ! acquire_lock; then
 fi
 
 trap release_lock EXIT INT TERM
+
+REAPER_RUN_ID="$(date +%Y%m%dT%H%M%S)-$$"
+export REAPER_RUN_ID
 
 # Detect → Reap → Report
 targets=$(detect_orphans)

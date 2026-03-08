@@ -25,6 +25,7 @@ _validate_candidate() {
   local min_age="$3"
   local condition="$4"
   local expected_start_token="${5:-}"
+  local expected_command_hash="${6:-}"
 
   local current_comm
   current_comm="$(_get_ps_comm "$pid")"
@@ -51,6 +52,16 @@ _validate_candidate() {
     [ "$current_start_token" = "$expected_start_token" ] || { REAPER_LAST_REASON="identity_mismatch_start"; return 1; }
   fi
 
+  if [ -n "$expected_command_hash" ]; then
+    local current_commandline
+    current_commandline="$(_get_ps_commandline "$pid")"
+    [ -n "$current_commandline" ] || { REAPER_LAST_REASON="missing_commandline"; return 1; }
+
+    local current_command_hash
+    current_command_hash="$(_hash_text "$current_commandline")"
+    [ "$current_command_hash" = "$expected_command_hash" ] || { REAPER_LAST_REASON="identity_mismatch_cmdhash"; return 1; }
+  fi
+
   return 0
 }
 
@@ -61,13 +72,14 @@ _kill_process() {
   local condition="$3"
   local min_age="$4"
   local expected_start_token="${5:-}"
+  local expected_command_hash="${6:-}"
   local grace_signal="${REAPER_SIGNAL_GRACE:-TERM}"
   local force_signal="${REAPER_SIGNAL_FORCE:-KILL}"
   local wait_sec="${REAPER_GRACE_WAIT_SEC:-3}"
 
   REAPER_LAST_REASON=""
 
-  _validate_candidate "$pid" "$expected_comm" "$min_age" "$condition" "$expected_start_token" || return 1
+  _validate_candidate "$pid" "$expected_comm" "$min_age" "$condition" "$expected_start_token" "$expected_command_hash" || return 1
 
   # Verify process still exists
   kill -0 "$pid" 2>/dev/null || { REAPER_LAST_REASON="missing"; return 1; }
@@ -94,9 +106,11 @@ reap_orphans() {
   local detections="$1"
   local dry_run="${REAPER_DRY_RUN:-0}"
   local min_age="${REAPER_ORPHAN_MIN_AGE_SEC:-3600}"
+  local max_kills="${REAPER_MAX_KILLS:-200}"
   local results=""
+  local killed_count=0
 
-  while IFS='|' read -r pid comm rss elapsed condition start_token; do
+  while IFS='|' read -r pid comm rss _elapsed condition start_token command_hash; do
     [ -z "$pid" ] && continue
 
     if [ "$dry_run" -eq 1 ]; then
@@ -104,8 +118,14 @@ reap_orphans() {
       continue
     fi
 
-    if _kill_process "$pid" "$comm" "$condition" "$min_age" "$start_token"; then
+    if [ "$killed_count" -ge "$max_kills" ]; then
+      results+="${pid}|${comm}|${rss}|skipped|budget_exceeded"$'\n'
+      continue
+    fi
+
+    if _kill_process "$pid" "$comm" "$condition" "$min_age" "$start_token" "$command_hash"; then
       results+="${pid}|${comm}|${rss}|killed|${REAPER_LAST_REASON}"$'\n'
+      killed_count=$((killed_count + 1))
     else
       results+="${pid}|${comm}|${rss}|failed|${REAPER_LAST_REASON:-unknown}"$'\n'
     fi

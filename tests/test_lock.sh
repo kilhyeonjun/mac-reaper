@@ -32,7 +32,9 @@ run_once() {
 }
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
+owner_pid=""
+sleeper_pid=""
+trap '[ -n "${owner_pid:-}" ] && kill "$owner_pid" 2>/dev/null || true; [ -n "${sleeper_pid:-}" ] && kill "$sleeper_pid" 2>/dev/null || true; rm -rf "$TMP_DIR"' EXIT
 
 test_missing_pid_file_should_recover_lock() {
   local case_dir="$TMP_DIR/case-missing-pid"
@@ -66,16 +68,47 @@ test_live_pid_should_skip() {
   local lock_dir="$case_dir/run.lock"
   local log_dir="$case_dir/logs"
   mkdir -p "$lock_dir" "$log_dir"
-  printf '%s\n' "$$" > "$lock_dir/pid"
+
+  python3 -c 'import time; time.sleep(30)' "$ROOT_DIR/reap.sh" &
+  owner_pid=$!
+
+  printf '%s\n' "$owner_pid" > "$lock_dir/pid"
 
   local log
   log="$(run_once "$lock_dir" "$log_dir")"
 
   assert_contains "Skipped: another_run_in_progress" "$log" "live pid lock should skip run"
+
+  kill "$owner_pid" 2>/dev/null || true
+  wait "$owner_pid" 2>/dev/null || true
+  owner_pid=""
+}
+
+test_live_unrelated_pid_should_recover_lock() {
+  local case_dir="$TMP_DIR/case-live-unrelated"
+  local lock_dir="$case_dir/run.lock"
+  local log_dir="$case_dir/logs"
+  mkdir -p "$lock_dir" "$log_dir"
+
+  sleep 30 &
+  sleeper_pid=$!
+
+  printf '%s\n' "$sleeper_pid" > "$lock_dir/pid"
+
+  local log
+  log="$(run_once "$lock_dir" "$log_dir")"
+
+  assert_not_contains "Skipped: another_run_in_progress" "$log" "live unrelated pid should not block lock recovery"
+  assert_contains "No orphan processes detected." "$log" "recovered lock should allow normal run"
+
+  kill "$sleeper_pid" 2>/dev/null || true
+  wait "$sleeper_pid" 2>/dev/null || true
+  sleeper_pid=""
 }
 
 test_missing_pid_file_should_recover_lock
 test_dead_pid_should_recover_lock
 test_live_pid_should_skip
+test_live_unrelated_pid_should_recover_lock
 
 printf 'PASS: test_lock.sh\n'

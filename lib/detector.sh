@@ -40,6 +40,20 @@ _get_ps_start_token() {
   ps -p "$pid" -o lstart= 2>/dev/null | sed 's/^ *//; s/ *$//'
 }
 
+_get_ps_commandline() {
+  local pid="$1"
+  ps -p "$pid" -o command= 2>/dev/null | sed 's/^ *//; s/ *$//'
+}
+
+_hash_text() {
+  local text="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$text" | shasum -a 1 | awk '{print $1}'
+  else
+    printf '%s' "$text" | cksum | awk '{print $1}'
+  fi
+}
+
 # Check if process has child processes
 # Usage: _has_children <pid>  → returns 0 (true) or 1 (false)
 _has_children() {
@@ -84,7 +98,15 @@ detect_orphans() {
       start_token=$(_get_ps_start_token "$pid")
       [ -n "$start_token" ] || continue
 
-      results+="${pid}|${comm}|${rss}|${elapsed}|${condition}|${start_token}"$'\n'
+      local commandline
+      commandline=$(_get_ps_commandline "$pid")
+      [ -n "$commandline" ] || continue
+
+      local command_hash
+      command_hash=$(_hash_text "$commandline")
+      [ -n "$command_hash" ] || continue
+
+      results+="${pid}|${comm}|${rss}|${elapsed}|${condition}|${start_token}|${command_hash}"$'\n'
       seen_pids+="${pid},"
     done < <(ps -eo ppid,pid,rss,comm 2>/dev/null)
   done

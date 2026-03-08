@@ -24,16 +24,17 @@ _log() {
 # Report reap results
 report() {
   local results="$1"
+  local run_id="${REAPER_RUN_ID:-manual}"
 
   [ -z "$results" ] && {
     _log "No orphan processes detected."
     return
   }
 
-  local killed=0 failed=0 dryrun=0
+  local killed=0 failed=0 dryrun=0 skipped=0
   local total_rss=0
 
-  _log "─── mac-reaper run ───"
+  _log "─── mac-reaper run id=${run_id} ───"
 
   while IFS='|' read -r pid comm rss status reason; do
     [ -z "$pid" ] && continue
@@ -43,14 +44,15 @@ report() {
       killed)  ((killed++)); ((total_rss += rss)) ;;
       failed)  ((failed++)) ;;
       dry-run) ((dryrun++)); ((total_rss += rss)) ;;
+      skipped) ((skipped++)) ;;
     esac
   done <<< "$results"
 
   local summary
   if [ "$dryrun" -gt 0 ]; then
-    summary="DRY-RUN: ${dryrun} orphans detected (~$((total_rss / 1024))MB)"
+    summary="DRY-RUN: ${dryrun} orphans detected (~$((total_rss / 1024))MB) run_id=${run_id}"
   else
-    summary="Reaped: ${killed} killed, ${failed} failed, ~$((total_rss / 1024))MB freed"
+    summary="Reaped: ${killed} killed, ${failed} failed, ${skipped} skipped, ~$((total_rss / 1024))MB freed run_id=${run_id}"
   fi
 
   _log "$summary"

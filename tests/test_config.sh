@@ -25,4 +25,13 @@ LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d).log"
 [ -f "$LOG_FILE" ] || fail "invalid config should still write a log entry"
 grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid config log message should be present"
 
+set +e
+REAPER_LOG_DIR="$LOG_DIR" REAPER_DRY_RUN=1 REAPER_MAX_KILLS="xyz" "$ROOT_DIR/reap.sh" >/tmp/mac-reaper-test-config2.out 2>/tmp/mac-reaper-test-config2.err
+status2=$?
+set -e
+
+[ "$status2" -ne 0 ] || fail "invalid REAPER_MAX_KILLS should fail fast with non-zero exit"
+
+grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid max-kills config should be logged"
+
 printf 'PASS: test_config.sh\n'

@@ -53,6 +53,11 @@ if [[ "${1:-}" == "-p" ]]; then
     echo "${!var:-${MOCK_LSTART_DEFAULT:-Mon Jan 01 00:00:00 2026}}"
     exit 0
   fi
+  if [[ "${3:-}" == "-o" ]] && [[ "${4:-}" == "command=" ]]; then
+    var="MOCK_COMMAND_${pid}"
+    echo "${!var:-${MOCK_COMMAND_DEFAULT:-/usr/bin/unknown}}"
+    exit 0
+  fi
   exit 0
 fi
 
@@ -128,6 +133,9 @@ EOF
   export MOCK_LSTART_101="Mon Mar 09 01:02:03 2026"
   export MOCK_LSTART_202="Mon Mar 09 01:02:03 2026"
   export MOCK_LSTART_301="Mon Mar 09 01:02:03 2026"
+  export MOCK_COMMAND_101="/opt/homebrew/bin/opencode --session alpha"
+  export MOCK_COMMAND_202="/bin/zsh -f"
+  export MOCK_COMMAND_301="fzf --ansi"
 
   export MOCK_CHILDREN_201="900"
 
@@ -141,7 +149,10 @@ EOF
   assert_contains "101|opencode|70000|" "$out" "eligible orphan opencode should be detected"
   assert_contains "202|/bin/zsh|384|" "$out" "eligible orphan zsh should be detected"
   assert_contains "301|fzf|960|" "$out" "eligible orphan fzf should be detected"
-  assert_contains "101|opencode|70000|950400|children=0|Mon Mar 09 01:02:03 2026" "$out" "condition and start token should be included in detector output"
+  local cmd_hash_101
+  cmd_hash_101="$(_hash_text "/opt/homebrew/bin/opencode --session alpha")"
+
+  assert_contains "101|opencode|70000|950400|children=0|Mon Mar 09 01:02:03 2026|${cmd_hash_101}" "$out" "condition/start token/command hash should be included in detector output"
   assert_not_contains "102|opencode|" "$out" "young process should be excluded by min age"
   assert_not_contains "150|opencode-helper|" "$out" "partial command match should not be detected"
   assert_not_contains "201|/bin/zsh|" "$out" "child-bearing process should be excluded when children=0"
@@ -159,6 +170,7 @@ EOF
 
   export MOCK_ETIME_501="bad:time"
   export MOCK_LSTART_501="Mon Mar 09 01:02:03 2026"
+  export MOCK_COMMAND_501="/opt/homebrew/bin/opencode --session bad"
 
   local out
   out="$(detect_orphans)"
