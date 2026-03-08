@@ -36,7 +36,7 @@ echo "✓ LaunchAgent loaded: $LABEL"
 if launchctl print "gui/$(id -u)/$LABEL" &>/dev/null; then
   echo ""
   echo "✅ Installation complete!"
-  echo "   Runs every 6 hours + at login"
+  echo "   Runs every 3 hours + at login"
   echo "   Logs: ~/.mac-reaper/logs/"
   echo ""
   echo "   Manual run:    $REAPER_DIR/reap.sh"

@@ -12,9 +12,9 @@
     <string>__REAPER_DIR__/reap.sh</string>
   </array>
 
-  <!-- Run every 6 hours (21600 seconds) -->
+  <!-- Run every 3 hours (10800 seconds) -->
   <key>StartInterval</key>
-  <integer>21600</integer>
+  <integer>10800</integer>
 
   <!-- Also run at load (boot / login) -->
   <key>RunAtLoad</key>
