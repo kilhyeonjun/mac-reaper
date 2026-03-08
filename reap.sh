@@ -9,6 +9,13 @@ set -euo pipefail
 
 REAPER_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+now_ms() {
+  python3 - <<'PY'
+import time
+print(time.time_ns() // 1_000_000)
+PY
+}
+
 # Load config and libraries
 source "$REAPER_DIR/conf/defaults.conf"
 source "$REAPER_DIR/lib/detector.sh"
@@ -88,6 +95,7 @@ acquire_lock() {
   if mkdir "$lock_dir" 2>/dev/null; then
     printf '%s\n' "$$" > "$pid_file"
     write_lock_meta "$lock_dir" "$lock_token"
+    REAPER_LOCK_OUTCOME="acquired_new"
     return 0
   fi
 
@@ -100,9 +108,11 @@ acquire_lock() {
          [ "$LOCK_META_UID" = "$(id -u)" ] && \
          [ "$LOCK_META_REAPER_DIR" = "$REAPER_DIR" ] && \
          is_same_reaper_owner "$lock_pid"; then
+        REAPER_LOCK_OUTCOME="skip_live_owner"
         return 1
       fi
 
+      REAPER_LOCK_OUTCOME="skip_ambiguous_live_holder"
       return 1
     fi
 
@@ -111,6 +121,7 @@ acquire_lock() {
       if mkdir "$lock_dir" 2>/dev/null; then
         printf '%s\n' "$$" > "$pid_file"
         write_lock_meta "$lock_dir" "$lock_token"
+        REAPER_LOCK_OUTCOME="recovered_stale_pid"
         return 0
       fi
     fi
@@ -119,10 +130,12 @@ acquire_lock() {
     if mkdir "$lock_dir" 2>/dev/null; then
       printf '%s\n' "$$" > "$pid_file"
       write_lock_meta "$lock_dir" "$lock_token"
+      REAPER_LOCK_OUTCOME="recovered_missing_pid"
       return 0
     fi
   fi
 
+  REAPER_LOCK_OUTCOME="lock_error"
   return 1
 }
 
@@ -135,6 +148,8 @@ release_lock() {
 
 # Ensure log directory
 _init_log_dir
+
+RUN_START_MS="$(now_ms)"
 
 if ! validate_runtime_config; then
   _log "Invalid config: REAPER_ORPHAN_MIN_AGE_SEC=${REAPER_ORPHAN_MIN_AGE_SEC:-} REAPER_GRACE_WAIT_SEC=${REAPER_GRACE_WAIT_SEC:-} REAPER_SIGNAL_GRACE=${REAPER_SIGNAL_GRACE:-} REAPER_SIGNAL_FORCE=${REAPER_SIGNAL_FORCE:-}"
@@ -151,9 +166,25 @@ trap release_lock EXIT INT TERM
 REAPER_RUN_ID="$(date +%Y%m%dT%H%M%S)-$$"
 export REAPER_RUN_ID
 
+cfg_targets="$(printf '%s;' "${REAPER_TARGETS[@]}")"
+cfg_source="min_age=${REAPER_ORPHAN_MIN_AGE_SEC:-};max_kills=${REAPER_MAX_KILLS:-};grace_signal=${REAPER_SIGNAL_GRACE:-};force_signal=${REAPER_SIGNAL_FORCE:-};grace_wait=${REAPER_GRACE_WAIT_SEC:-};retain_days=${REAPER_LOG_RETAIN_DAYS:-};targets=${cfg_targets}"
+REAPER_CONFIG_FINGERPRINT="$(_hash_text "$cfg_source")"
+export REAPER_CONFIG_FINGERPRINT
+
 # Detect → Reap → Report
 targets=$(detect_orphans)
+CANDIDATES_DETECTED="$(printf '%s\n' "$targets" | awk 'NF{c++} END{print c+0}')"
+REAPER_CANDIDATES_DETECTED="$CANDIDATES_DETECTED"
+export REAPER_CANDIDATES_DETECTED
+
 results=$(reap_orphans "$targets")
+
+RUN_END_MS="$(now_ms)"
+REAPER_RUN_DURATION_MS="$((RUN_END_MS - RUN_START_MS))"
+export REAPER_RUN_DURATION_MS
+
+export REAPER_LOCK_OUTCOME="${REAPER_LOCK_OUTCOME:-unknown}"
+
 report "$results"
 
 # Rotate old logs

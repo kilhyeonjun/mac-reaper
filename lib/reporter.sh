@@ -25,20 +25,28 @@ _log() {
 report() {
   local results="$1"
   local run_id="${REAPER_RUN_ID:-manual}"
+  local run_duration_ms="${REAPER_RUN_DURATION_MS:-0}"
+  local candidates_detected="${REAPER_CANDIDATES_DETECTED:-0}"
+  local lock_outcome="${REAPER_LOCK_OUTCOME:-unknown}"
+  local config_fingerprint="${REAPER_CONFIG_FINGERPRINT:-unknown}"
+
+  local killed=0 failed=0 dryrun=0 skipped=0
+  local total_rss=0
+  local reason_rows=""
+
+  _log "─── mac-reaper run id=${run_id} ───"
+  _log "RunMeta: candidates=${candidates_detected} duration_ms=${run_duration_ms} lock_outcome=${lock_outcome} config_fp=${config_fingerprint}"
 
   [ -z "$results" ] && {
+    _log "ReasonBuckets: none"
     _log "No orphan processes detected."
     return
   }
 
-  local killed=0 failed=0 dryrun=0 skipped=0
-  local total_rss=0
-
-  _log "─── mac-reaper run id=${run_id} ───"
-
   while IFS='|' read -r pid comm rss status reason; do
     [ -z "$pid" ] && continue
     _log "  $status: PID=$pid comm=$comm rss=${rss}KB reason=${reason:-n/a}"
+    reason_rows+="${reason:-unknown}"$'\n'
 
     case "$status" in
       killed)  ((killed++)); ((total_rss += rss)) ;;
@@ -54,6 +62,11 @@ report() {
   else
     summary="Reaped: ${killed} killed, ${failed} failed, ${skipped} skipped, ~$((total_rss / 1024))MB freed run_id=${run_id}"
   fi
+
+  reason_buckets="$(printf '%s' "$reason_rows" | grep -v '^$' | sort | uniq -c | awk '{printf "%s=%d ", $2, $1}')"
+  reason_buckets="${reason_buckets% }"
+  [ -n "$reason_buckets" ] || reason_buckets="none"
+  _log "ReasonBuckets: ${reason_buckets}"
 
   _log "$summary"
 

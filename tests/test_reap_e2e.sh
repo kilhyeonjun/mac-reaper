@@ -140,6 +140,10 @@ LOG_CONTENT="$(cat "$LOG_FILE")"
 
 assert_contains "killed: PID=101 comm=opencode rss=2048KB reason=killed" "$LOG_CONTENT" "e2e should kill first target"
 assert_contains "skipped: PID=202 comm=fzf rss=1024KB reason=budget_exceeded" "$LOG_CONTENT" "e2e should skip second target by budget"
+assert_contains "RunMeta: candidates=2 duration_ms=" "$LOG_CONTENT" "e2e should emit run meta with candidates/duration"
+assert_contains "lock_outcome=acquired_new" "$LOG_CONTENT" "e2e lock outcome should be recorded"
+assert_contains "config_fp=" "$LOG_CONTENT" "e2e should emit config fingerprint"
+assert_contains "ReasonBuckets: budget_exceeded=1 killed=1" "$LOG_CONTENT" "e2e should emit reason bucket counts"
 assert_contains "Reaped: 1 killed, 0 failed, 1 skipped, ~2MB freed run_id=" "$LOG_CONTENT" "e2e summary should include expected counts"
 
 [ ! -d "$LOCK_DIR" ] || fail "lock directory should be cleaned after run"
