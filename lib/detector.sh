@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # mac-reaper — orphan process detector
 # Sourced by reap.sh
 
@@ -17,7 +18,8 @@ _get_elapsed_sec() {
   fi
 
   local IFS=':'
-  local parts=($etime)
+  local parts=()
+  read -r -a parts <<< "$etime"
   case ${#parts[@]} in
     3) hours="${parts[0]}"; mins="${parts[1]}"; secs="${parts[2]}" ;;
     2) mins="${parts[0]}"; secs="${parts[1]}" ;;
@@ -37,28 +39,24 @@ _has_children() {
 }
 
 # Detect orphan processes matching REAPER_TARGETS
-# Output: pid|comm|rss_kb|elapsed_sec  (one per line)
 detect_orphans() {
   local min_age="${REAPER_ORPHAN_MIN_AGE_SEC:-3600}"
   local results=""
+  local seen_pids=","
 
   for target_spec in "${REAPER_TARGETS[@]}"; do
     local pattern="${target_spec%%:*}"
     local condition="${target_spec#*:}"
     [ "$condition" = "$pattern" ] && condition=""
 
-    # Find all PPID=1 processes matching the pattern
-    while IFS= read -r line; do
-      [ -z "$line" ] && continue
+    while read -r ppid pid rss comm; do
+      [ -z "${pid:-}" ] && continue
+      [ "$comm" = "$pattern" ] || continue
+      [ "$ppid" -eq 1 ] || continue
 
-      local ppid pid rss comm
-      ppid=$(echo "$line" | awk '{print $1}')
-      pid=$(echo "$line" | awk '{print $2}')
-      rss=$(echo "$line" | awk '{print $3}')
-      comm=$(echo "$line" | awk '{$1=$2=$3=""; print}' | sed 's/^ *//')
-
-      # Must be orphaned (PPID=1)
-      [ "$ppid" -ne 1 ] && continue
+      case "$seen_pids" in
+        *",${pid},"*) continue ;;
+      esac
 
       # Check age
       local elapsed
@@ -70,9 +68,10 @@ detect_orphans() {
         _has_children "$pid" && continue
       fi
 
-      results+="${pid}|${comm}|${rss}|${elapsed}"$'\n'
-    done < <(ps -eo ppid,pid,rss,comm 2>/dev/null | grep "$pattern")
+      results+="${pid}|${comm}|${rss}|${elapsed}|${condition}"$'\n'
+      seen_pids+="${pid},"
+    done < <(ps -eo ppid,pid,rss,comm 2>/dev/null)
   done
 
-  echo "$results" | grep -v '^$' || true
+  printf '%s\n' "$results" | grep -v '^$' || true
 }

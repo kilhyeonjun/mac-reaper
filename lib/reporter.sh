@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # mac-reaper — logging and reporting
 # Sourced by reap.sh
 
@@ -21,7 +22,6 @@ _log() {
 }
 
 # Report reap results
-# Input: output from reap_orphans (pid|comm|rss|status per line)
 report() {
   local results="$1"
 
@@ -35,9 +35,9 @@ report() {
 
   _log "─── mac-reaper run ───"
 
-  while IFS='|' read -r pid comm rss status; do
+  while IFS='|' read -r pid comm rss status reason; do
     [ -z "$pid" ] && continue
-    _log "  $status: PID=$pid comm=$comm rss=${rss}KB"
+    _log "  $status: PID=$pid comm=$comm rss=${rss}KB reason=${reason:-n/a}"
 
     case "$status" in
       killed)  ((killed++)); ((total_rss += rss)) ;;
@@ -65,4 +65,9 @@ rotate_logs() {
   local retain_days="${REAPER_LOG_RETAIN_DAYS:-30}"
 
   find "$log_dir" -name "*.log" -mtime +"$retain_days" -delete 2>/dev/null
+
+  local launchd_stdout="$HOME/.mac-reaper/launchd-stdout.log"
+  local launchd_stderr="$HOME/.mac-reaper/launchd-stderr.log"
+  [ -f "$launchd_stdout" ] && find "$launchd_stdout" -mtime +"$retain_days" -delete 2>/dev/null
+  [ -f "$launchd_stderr" ] && find "$launchd_stderr" -mtime +"$retain_days" -delete 2>/dev/null
 }
