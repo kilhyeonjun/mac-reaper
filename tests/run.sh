@@ -7,5 +7,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 "$ROOT_DIR/tests/test_reaper.sh"
 "$ROOT_DIR/tests/test_lock.sh"
 "$ROOT_DIR/tests/test_config.sh"
+"$ROOT_DIR/tests/test_reporter.sh"
 
 printf 'PASS: all tests\n'

@@ -70,6 +70,12 @@ rotate_logs() {
 
   local launchd_stdout="$HOME/.mac-reaper/launchd-stdout.log"
   local launchd_stderr="$HOME/.mac-reaper/launchd-stderr.log"
-  [ -f "$launchd_stdout" ] && find "$launchd_stdout" -mtime +"$retain_days" -delete 2>/dev/null
-  [ -f "$launchd_stderr" ] && find "$launchd_stderr" -mtime +"$retain_days" -delete 2>/dev/null
+  if [ -f "$launchd_stdout" ]; then
+    find "$launchd_stdout" -mtime +"$retain_days" -delete 2>/dev/null
+  fi
+  if [ -f "$launchd_stderr" ]; then
+    find "$launchd_stderr" -mtime +"$retain_days" -delete 2>/dev/null
+  fi
+
+  return 0
 }
