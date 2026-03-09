@@ -29,13 +29,15 @@ report() {
   local candidates_detected="${REAPER_CANDIDATES_DETECTED:-0}"
   local lock_outcome="${REAPER_LOCK_OUTCOME:-unknown}"
   local config_fingerprint="${REAPER_CONFIG_FINGERPRINT:-unknown}"
+  local run_status="${REAPER_RUN_STATUS:-completed}"
+  local failure_reason="${REAPER_FAILURE_REASON:-none}"
 
   local killed=0 failed=0 dryrun=0 skipped=0
   local total_rss=0
   local reason_rows=""
 
   _log "─── mac-reaper run id=${run_id} ───"
-  _log "RunMeta: candidates=${candidates_detected} duration_ms=${run_duration_ms} lock_outcome=${lock_outcome} config_fp=${config_fingerprint}"
+  _log "RunMeta: candidates=${candidates_detected} duration_ms=${run_duration_ms} lock_outcome=${lock_outcome} run_status=${run_status} failure_reason=${failure_reason} config_fp=${config_fingerprint}"
 
   [ -z "$results" ] && {
     _log "ReasonBuckets: none"

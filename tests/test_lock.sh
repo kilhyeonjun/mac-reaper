@@ -73,11 +73,21 @@ test_live_pid_should_skip() {
   owner_pid=$!
 
   printf '%s\n' "$owner_pid" > "$lock_dir/pid"
+  owner_start_token="$(ps -p "$owner_pid" -o lstart= | sed 's/^ *//; s/ *$//')"
+  {
+    printf 'pid=%s\n' "$owner_pid"
+    printf 'uid=%s\n' "$(id -u)"
+    printf 'reaper_dir=%s\n' "$ROOT_DIR"
+    printf 'start_token=%s\n' "$owner_start_token"
+    printf 'token=%s\n' "owner-token"
+  } > "$lock_dir/meta"
 
   local log
   log="$(run_once "$lock_dir" "$log_dir")"
 
   assert_contains "Skipped: another_run_in_progress" "$log" "live pid lock should skip run"
+  assert_contains "run_status=skipped_by_lock" "$log" "skip should emit run_status"
+  assert_contains "failure_reason=skip_live_owner" "$log" "owner skip should expose failure reason"
 
   kill "$owner_pid" 2>/dev/null || true
   wait "$owner_pid" 2>/dev/null || true
@@ -99,6 +109,8 @@ test_live_unrelated_pid_should_recover_lock() {
   log="$(run_once "$lock_dir" "$log_dir")"
 
   assert_contains "Skipped: another_run_in_progress" "$log" "ambiguous live pid should fail closed and skip"
+  assert_contains "run_status=skipped_by_lock" "$log" "ambiguous skip should emit run_status"
+  assert_contains "failure_reason=skip_ambiguous_live_holder" "$log" "ambiguous skip should expose failure reason"
 
   kill "$sleeper_pid" 2>/dev/null || true
   wait "$sleeper_pid" 2>/dev/null || true

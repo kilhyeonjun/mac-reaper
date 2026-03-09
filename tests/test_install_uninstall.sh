@@ -73,6 +73,7 @@ test_install_is_idempotent_and_generates_expected_plist() {
   assert_file_contains "$plist" "<string>$ROOT_DIR/reap.sh</string>" "plist should contain resolved reap.sh path"
   assert_file_contains "$plist" "<string>$TEST_HOME</string>" "plist should contain resolved HOME"
   assert_file_contains "$plist" "<integer>10800</integer>" "plist should contain 3-hour interval"
+  assert_file_contains "$plist" "<integer>120</integer>" "plist should contain updated exit timeout"
   assert_file_contains "$plist" "<key>RunAtLoad</key>" "plist should run at load"
 }
 
