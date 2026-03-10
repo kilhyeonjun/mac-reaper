@@ -40,6 +40,12 @@ validate_runtime_config() {
   is_non_negative_int "${REAPER_ORPHAN_MIN_AGE_SEC:-}" || return 1
   is_non_negative_int "${REAPER_GRACE_WAIT_SEC:-}" || return 1
   is_non_negative_int "${REAPER_MAX_KILLS:-}" || return 1
+  is_non_negative_int "${REAPER_RETRY_LOCK_MAX_ATTEMPTS:-}" || return 1
+  is_non_negative_int "${REAPER_RETRY_LOCK_BACKOFF_SEC:-}" || return 1
+  case "${REAPER_RETRY_ON_LOCK_SKIP:-}" in
+    0|1) ;;
+    *) return 1 ;;
+  esac
   case "${REAPER_SIGNAL_GRACE:-}" in
     TERM|HUP|INT|QUIT|KILL) ;;
     *) return 1 ;;
@@ -170,6 +176,53 @@ release_lock() {
   rmdir "$lock_dir" 2>/dev/null || true
 }
 
+is_retryable_lock_skip() {
+  case "${1:-}" in
+    skip_live_owner|skip_ambiguous_live_holder) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+acquire_lock_with_retry() {
+  local attempts=0
+  local max_attempts="${REAPER_RETRY_LOCK_MAX_ATTEMPTS:-1}"
+  local backoff_sec="${REAPER_RETRY_LOCK_BACKOFF_SEC:-5}"
+  local retry_on_skip="${REAPER_RETRY_ON_LOCK_SKIP:-0}"
+
+  REAPER_LOCK_RETRY_COUNT=0
+
+  while true; do
+    if acquire_lock; then
+      REAPER_LOCK_RETRY_COUNT="$attempts"
+      export REAPER_LOCK_RETRY_COUNT
+      return 0
+    fi
+
+    if [ "$retry_on_skip" != "1" ]; then
+      REAPER_LOCK_RETRY_COUNT="$attempts"
+      export REAPER_LOCK_RETRY_COUNT
+      return 1
+    fi
+
+    if ! is_retryable_lock_skip "${REAPER_LOCK_OUTCOME:-}"; then
+      REAPER_LOCK_RETRY_COUNT="$attempts"
+      export REAPER_LOCK_RETRY_COUNT
+      return 1
+    fi
+
+    if [ "$attempts" -ge "$max_attempts" ]; then
+      REAPER_LOCK_OUTCOME="${REAPER_LOCK_OUTCOME}_retry_exhausted"
+      REAPER_LOCK_RETRY_COUNT="$attempts"
+      export REAPER_LOCK_RETRY_COUNT
+      return 1
+    fi
+
+    attempts=$((attempts + 1))
+    _log "Lock busy (outcome=${REAPER_LOCK_OUTCOME}); retrying ${attempts}/${max_attempts} after ${backoff_sec}s"
+    sleep "$backoff_sec"
+  done
+}
+
 # Ensure log directory
 _init_log_dir
 
@@ -178,7 +231,7 @@ REAPER_RUN_ID="$(date +%Y%m%dT%H%M%S)-$$"
 export REAPER_RUN_ID
 
 cfg_targets="$(printf '%s;' "${REAPER_TARGETS[@]}")"
-cfg_source="min_age=${REAPER_ORPHAN_MIN_AGE_SEC:-};max_kills=${REAPER_MAX_KILLS:-};grace_signal=${REAPER_SIGNAL_GRACE:-};force_signal=${REAPER_SIGNAL_FORCE:-};grace_wait=${REAPER_GRACE_WAIT_SEC:-};retain_days=${REAPER_LOG_RETAIN_DAYS:-};targets=${cfg_targets}"
+cfg_source="min_age=${REAPER_ORPHAN_MIN_AGE_SEC:-};max_kills=${REAPER_MAX_KILLS:-};grace_signal=${REAPER_SIGNAL_GRACE:-};force_signal=${REAPER_SIGNAL_FORCE:-};grace_wait=${REAPER_GRACE_WAIT_SEC:-};retain_days=${REAPER_LOG_RETAIN_DAYS:-};retry_on_lock_skip=${REAPER_RETRY_ON_LOCK_SKIP:-};retry_lock_max_attempts=${REAPER_RETRY_LOCK_MAX_ATTEMPTS:-};retry_lock_backoff_sec=${REAPER_RETRY_LOCK_BACKOFF_SEC:-};targets=${cfg_targets}"
 REAPER_CONFIG_FINGERPRINT="$(_hash_text "$cfg_source")"
 export REAPER_CONFIG_FINGERPRINT
 
@@ -188,19 +241,20 @@ if ! validate_runtime_config; then
   REAPER_RUN_STATUS="invalid_config"
   REAPER_FAILURE_REASON="invalid_config"
   REAPER_LOCK_OUTCOME="not_acquired_invalid_config"
-  export REAPER_CANDIDATES_DETECTED REAPER_RUN_DURATION_MS REAPER_RUN_STATUS REAPER_FAILURE_REASON REAPER_LOCK_OUTCOME
+  REAPER_LOCK_RETRY_COUNT=0
+  export REAPER_CANDIDATES_DETECTED REAPER_RUN_DURATION_MS REAPER_RUN_STATUS REAPER_FAILURE_REASON REAPER_LOCK_OUTCOME REAPER_LOCK_RETRY_COUNT
   report ""
   rotate_logs
   _log "Invalid config: REAPER_ORPHAN_MIN_AGE_SEC=${REAPER_ORPHAN_MIN_AGE_SEC:-} REAPER_GRACE_WAIT_SEC=${REAPER_GRACE_WAIT_SEC:-} REAPER_SIGNAL_GRACE=${REAPER_SIGNAL_GRACE:-} REAPER_SIGNAL_FORCE=${REAPER_SIGNAL_FORCE:-}"
   exit 2
 fi
 
-if ! acquire_lock; then
+if ! acquire_lock_with_retry; then
   REAPER_CANDIDATES_DETECTED=0
   REAPER_RUN_DURATION_MS="$(( $(now_ms) - RUN_START_MS ))"
   REAPER_RUN_STATUS="skipped_by_lock"
   REAPER_FAILURE_REASON="${REAPER_LOCK_OUTCOME:-lock_unavailable}"
-  export REAPER_CANDIDATES_DETECTED REAPER_RUN_DURATION_MS REAPER_RUN_STATUS REAPER_FAILURE_REASON REAPER_LOCK_OUTCOME
+  export REAPER_CANDIDATES_DETECTED REAPER_RUN_DURATION_MS REAPER_RUN_STATUS REAPER_FAILURE_REASON REAPER_LOCK_OUTCOME REAPER_LOCK_RETRY_COUNT
   report ""
   rotate_logs
   _log "Skipped: another_run_in_progress lock=${REAPER_LOCK_DIR:-$HOME/.mac-reaper/run.lock}"
@@ -222,6 +276,7 @@ REAPER_RUN_DURATION_MS="$((RUN_END_MS - RUN_START_MS))"
 export REAPER_RUN_DURATION_MS
 
 export REAPER_LOCK_OUTCOME="${REAPER_LOCK_OUTCOME:-unknown}"
+export REAPER_LOCK_RETRY_COUNT="${REAPER_LOCK_RETRY_COUNT:-0}"
 REAPER_RUN_STATUS="completed"
 REAPER_FAILURE_REASON="none"
 export REAPER_RUN_STATUS REAPER_FAILURE_REASON

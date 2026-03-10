@@ -60,4 +60,28 @@ set -e
 [ "$status5" -ne 0 ] || fail "negative REAPER_ORPHAN_MIN_AGE_SEC should fail fast"
 grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid orphan age should be logged"
 
+set +e
+REAPER_LOG_DIR="$LOG_DIR" REAPER_DRY_RUN=1 REAPER_RETRY_ON_LOCK_SKIP="maybe" "$ROOT_DIR/reap.sh" >/tmp/mac-reaper-test-config6.out 2>/tmp/mac-reaper-test-config6.err
+status6=$?
+set -e
+
+[ "$status6" -ne 0 ] || fail "invalid REAPER_RETRY_ON_LOCK_SKIP should fail fast"
+grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid retry toggle should be logged"
+
+set +e
+REAPER_LOG_DIR="$LOG_DIR" REAPER_DRY_RUN=1 REAPER_RETRY_LOCK_MAX_ATTEMPTS="abc" "$ROOT_DIR/reap.sh" >/tmp/mac-reaper-test-config7.out 2>/tmp/mac-reaper-test-config7.err
+status7=$?
+set -e
+
+[ "$status7" -ne 0 ] || fail "invalid REAPER_RETRY_LOCK_MAX_ATTEMPTS should fail fast"
+grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid retry max attempts should be logged"
+
+set +e
+REAPER_LOG_DIR="$LOG_DIR" REAPER_DRY_RUN=1 REAPER_RETRY_LOCK_BACKOFF_SEC="-1" "$ROOT_DIR/reap.sh" >/tmp/mac-reaper-test-config8.out 2>/tmp/mac-reaper-test-config8.err
+status8=$?
+set -e
+
+[ "$status8" -ne 0 ] || fail "negative REAPER_RETRY_LOCK_BACKOFF_SEC should fail fast"
+grep -Fq "Invalid config" "$LOG_FILE" || fail "invalid retry backoff should be logged"
+
 printf 'PASS: test_config.sh\n'
