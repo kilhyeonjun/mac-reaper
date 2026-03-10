@@ -18,6 +18,10 @@ echo "✓ reap.sh executable"
 mkdir -p "$HOME/.mac-reaper/logs"
 echo "✓ Log directory: ~/.mac-reaper/logs"
 
+mkdir -p "$HOME/.local/bin"
+ln -sf "$REAPER_DIR/reap.sh" "$HOME/.local/bin/mac-reaper"
+echo "✓ CLI command installed: ~/.local/bin/mac-reaper"
+
 # 3. Generate plist with actual paths
 sed \
   -e "s|__REAPER_DIR__|$REAPER_DIR|g" \
@@ -40,6 +44,7 @@ if launchctl print "gui/$(id -u)/$LABEL" &>/dev/null; then
   echo "   Logs: ~/.mac-reaper/logs/"
   echo ""
   echo "   Manual run:    $REAPER_DIR/reap.sh"
+  echo "   CLI run:       mac-reaper"
   echo "   Dry-run:       REAPER_DRY_RUN=1 $REAPER_DIR/reap.sh"
   echo "   Uninstall:     $REAPER_DIR/uninstall.sh"
 else

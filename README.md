@@ -31,6 +31,9 @@ launchd agent로 등록됩니다:
 # 수동 실행
 ./reap.sh
 
+# CLI 실행
+mac-reaper
+
 # Dry-run (탐지만, kill 안 함)
 REAPER_DRY_RUN=1 ./reap.sh
 ```

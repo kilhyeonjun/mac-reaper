@@ -75,6 +75,11 @@ test_install_is_idempotent_and_generates_expected_plist() {
   assert_file_contains "$plist" "<integer>10800</integer>" "plist should contain 3-hour interval"
   assert_file_contains "$plist" "<integer>120</integer>" "plist should contain updated exit timeout"
   assert_file_contains "$plist" "<key>RunAtLoad</key>" "plist should run at load"
+
+  local cli
+  cli="$TEST_HOME/.local/bin/mac-reaper"
+  [ -L "$cli" ] || fail "install should create mac-reaper CLI symlink"
+  [ "$(readlink "$cli")" = "$ROOT_DIR/reap.sh" ] || fail "CLI symlink should point to reap.sh"
 }
 
 test_uninstall_is_idempotent() {
@@ -84,6 +89,10 @@ test_uninstall_is_idempotent() {
   local plist
   plist="$TEST_HOME/Library/LaunchAgents/net.kilhyeonjun.mac-reaper.plist"
   [ ! -f "$plist" ] || fail "uninstall should remove plist"
+
+  local cli
+  cli="$TEST_HOME/.local/bin/mac-reaper"
+  [ ! -e "$cli" ] || fail "uninstall should remove mac-reaper CLI"
 }
 
 test_install_is_idempotent_and_generates_expected_plist

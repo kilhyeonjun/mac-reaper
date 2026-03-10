@@ -17,8 +17,23 @@ _log_file() {
 _log() {
   local msg="$1"
   local timestamp
+  local line
   timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-  echo "[$timestamp] $msg" >> "$(_log_file)"
+  line="[$timestamp] $msg"
+  echo "$line" >> "$(_log_file)"
+
+  case "${REAPER_CONSOLE_LOG:-auto}" in
+    always)
+      printf '%s\n' "$line"
+      ;;
+    never)
+      ;;
+    auto|*)
+      if [ -t 1 ]; then
+        printf '%s\n' "$line"
+      fi
+      ;;
+  esac
 }
 
 # Report reap results

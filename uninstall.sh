@@ -4,6 +4,7 @@ set -euo pipefail
 
 LABEL="net.kilhyeonjun.mac-reaper"
 PLIST_DST="$HOME/Library/LaunchAgents/net.kilhyeonjun.mac-reaper.plist"
+CLI_DST="$HOME/.local/bin/mac-reaper"
 
 echo "mac-reaper uninstaller"
 echo "======================"
@@ -22,6 +23,13 @@ if [ -f "$PLIST_DST" ]; then
   echo "✓ Plist removed: $PLIST_DST"
 else
   echo "- Plist not found (skipping)"
+fi
+
+if [ -L "$CLI_DST" ] || [ -f "$CLI_DST" ]; then
+  rm "$CLI_DST"
+  echo "✓ CLI removed: $CLI_DST"
+else
+  echo "- CLI not found (skipping)"
 fi
 
 echo ""
