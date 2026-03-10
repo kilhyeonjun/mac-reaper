@@ -20,6 +20,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 LOG_DIR="$TMP_DIR/logs"
 OUT_FILE="$TMP_DIR/stdout.log"
+BIN_DIR="$TMP_DIR/bin"
+
+mkdir -p "$BIN_DIR"
+ln -sf "$ROOT_DIR/reap.sh" "$BIN_DIR/mac-reaper"
 
 REAPER_LOG_DIR="$LOG_DIR" REAPER_CONSOLE_LOG=always REAPER_DRY_RUN=1 "$ROOT_DIR/reap.sh" > "$OUT_FILE"
 
@@ -28,5 +32,12 @@ OUT_CONTENT="$(cat "$OUT_FILE")"
 assert_contains "RunMeta:" "$OUT_CONTENT" "console output should include RunMeta"
 assert_contains "ReasonBuckets:" "$OUT_CONTENT" "console output should include ReasonBuckets"
 assert_contains "No orphan processes detected." "$OUT_CONTENT" "console output should include no-orphan summary"
+
+REAPER_LOG_DIR="$LOG_DIR" REAPER_CONSOLE_LOG=always REAPER_DRY_RUN=1 PATH="$BIN_DIR:$PATH" mac-reaper > "$OUT_FILE"
+OUT_CONTENT="$(cat "$OUT_FILE")"
+
+assert_contains "RunMeta:" "$OUT_CONTENT" "symlink CLI output should include RunMeta"
+assert_contains "ReasonBuckets:" "$OUT_CONTENT" "symlink CLI output should include ReasonBuckets"
+assert_contains "No orphan processes detected." "$OUT_CONTENT" "symlink CLI output should include no-orphan summary"
 
 printf 'PASS: test_console_output.sh\n'
